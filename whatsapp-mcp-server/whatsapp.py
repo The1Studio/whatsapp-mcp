@@ -3,12 +3,22 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import os.path
+import base64
 import requests
 import json
 import audio
 
 MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
+WHATSAPP_API_TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'api_token')
 WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
+
+def _api_headers() -> dict:
+    try:
+        with open(WHATSAPP_API_TOKEN_PATH) as f:
+            token = f.read().strip()
+    except OSError:
+        return {}
+    return {"X-Api-Key": token} if token else {}
 
 @dataclass
 class Message:
@@ -634,7 +644,7 @@ def send_message(recipient: str, message: str) -> Tuple[bool, str]:
             "message": message,
         }
         
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=_api_headers())
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -662,13 +672,17 @@ def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
         if not os.path.isfile(media_path):
             return False, f"Media file not found: {media_path}"
         
+        with open(media_path, "rb") as f:
+            media_data = base64.b64encode(f.read()).decode("ascii")
+        
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload = {
             "recipient": recipient,
-            "media_path": media_path
+            "media_data": media_data,
+            "media_name": os.path.basename(media_path),
         }
         
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=_api_headers())
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -702,13 +716,17 @@ def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
             except Exception as e:
                 return False, f"Error converting file to opus ogg. You likely need to install ffmpeg: {str(e)}"
         
+        with open(media_path, "rb") as f:
+            media_data = base64.b64encode(f.read()).decode("ascii")
+        
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload = {
             "recipient": recipient,
-            "media_path": media_path
+            "media_data": media_data,
+            "media_name": os.path.basename(media_path),
         }
         
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=_api_headers())
         
         # Check if the request was successful
         if response.status_code == 200:
@@ -741,7 +759,7 @@ def download_media(message_id: str, chat_jid: str) -> Optional[str]:
             "chat_jid": chat_jid
         }
         
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=_api_headers())
         
         if response.status_code == 200:
             result = response.json()
